@@ -17,24 +17,25 @@ def parse(responses: List[httpx.Response]) -> List[dict]:
         sel = get_clean_html_tree(resp)
 
         sections = []
-        for doc in sel.xpath("//div[contains(@class, 'template-object')]"):
+        for doc in sel.xpath("//div[contains(@class, 'content-view-full')]"):
             section = []
             for node in doc.xpath("*"):
                 section.append(node)
             if section:
                 sections.append(section)
-    page_title = sel.xpath("//h1/text()").get("").strip()
-    for section in sections:
-        data = {
-            "title": f"{page_title} | " + "".join(s.xpath("//h2/text()").get() for s in section).strip(),
-            "text": "".join(s.get() for s in section).strip()
-        }
-        url_with_id_pointer = (
-            str(resp.url) + "#" +
-            (section[0].xpath("@id").get() or data["title"])
-        )
-        data["location"] = url_with_id_pointer
-        docs.append(data)
+
+        page_title = sel.xpath("//h1/text()").get("").strip()
+        for section in sections:
+            data = {
+                "title": f"{page_title}",
+                "text": "".join(s.get() for s in section).strip()
+            }
+            url_with_id_pointer = (
+                str(resp.url) + "#" +
+                (section[0].xpath("@id").get() or data["title"])
+            )
+            data["location"] = url_with_id_pointer
+            docs.append(data)
     return docs
 
 def build_index(docs: List[dict]):
