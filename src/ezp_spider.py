@@ -1,3 +1,4 @@
+from datetime import datetime
 import asyncio
 from typing import List
 import httpx
@@ -24,7 +25,6 @@ def parse(responses: List[httpx.Response]) -> List[dict]:
                 sections.append(section)
     page_title = sel.xpath("//h1/text()").get("").strip()
     for section in sections:
-        tmp = "".join(s.xpath("//h2/text()").get() for s in section).strip();
         data = {
             "title": f"{page_title} | " + "".join(s.xpath("//h2/text()").get() for s in section).strip(),
             "text": "".join(s.get() for s in section).strip()
@@ -101,7 +101,7 @@ def get_clean_html_tree(
     for remove_xp in remove_xpaths:
         for rm_node in sel.xpath(remove_xp):
             rm_node.remove()
-    allowed_attributes = ["src", "href", "width", "height"]
+    allowed_attributes = ["src", "href", "width", "height", "class", "id", "title"]
     for el in sel.xpath("//*"):
         for k in list(el.root.attrib):
             if k in allowed_attributes:
@@ -117,19 +117,25 @@ def get_clean_html_tree(
     return sel
 
 
-async def run():
-    limits = httpx.Limits(max_connections=3)
-    headers = {"User-Agent": "Tim try to index ezp docs"}
-    async with httpx.AsyncClient(limits=limits, headers=headers) as session:
+async def run(url:str, header:str):
+    limits = httpx.Limits(max_connections=3, keepalive_expiry=None)
+    headers = {"User-Agent": header}
+    async with httpx.AsyncClient(limits=limits, headers=headers, timeout=None) as session:
         responses = await crawl(
             # our starting point url
-            url="https://ezpublishdoc.mugo.ca/eZ-Publish/Technical-manual/4.x.html",
+            url=url,
             follow_xpath="//li[contains(@class, 'topchapter')]//a/@href",
             session=session,
+            max_depth=9000
         )
         docs = parse(responses)
-        with open("ezp_index.json", "w") as f:
-            f.write(build_index(docs))
+        if len(docs) > 0:
+            with open("ezp_index.json", "w") as f:
+                f.write(build_index(docs))
+        else:
+            log.info('no docs found')
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    now = datetime.now()
+    now_str = f"{now:%Y-%m-%d %H:%M:%S%z}"
+    asyncio.run(run(url="https://ezpublishdoc.mugo.ca/eZ-Publish/Technical-manual/4.x.html", header=now_str))
