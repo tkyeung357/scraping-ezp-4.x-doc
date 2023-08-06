@@ -7,6 +7,7 @@ from parsel import Selector
 from urllib.parse import urljoin
 import json
 from lunr import lunr
+import re
 
 
 def parse(responses: List[httpx.Response]) -> List[dict]:
@@ -16,23 +17,29 @@ def parse(responses: List[httpx.Response]) -> List[dict]:
     for resp in responses:
         sel = get_clean_html_tree(resp)
 
+        titles = []
         sections = []
-        for doc in sel.xpath("//div[contains(@class, 'content-view-full')]"):
+        for doc in sel.xpath("//div[contains(@class, 'content-view-full')]//div[contains(@class, 'template-object')]"):
             section = []
+            #todo: h2 section
             for node in doc.xpath("*"):
-                section.append(node)
+                # separate page by <hX> nodes
+                if re.search(r"h\d", node.root.tag):
+                    titles.append(node);
+                else:
+                    section.append(node)
             if section:
                 sections.append(section)
 
         page_title = sel.xpath("//h1/text()").get("").strip()
         for section in sections:
             data = {
-                "title": f"{page_title}",
-                "text": "".join(s.get() for s in section).strip()
+                "title": f"{page_title} | "
+                + " | ".join(s.xpath(".//text()").get("") for s in titles).strip(),
+                "text": "".join(s.get() for s in section).strip(),
             }
             url_with_id_pointer = (
-                str(resp.url) + "#" +
-                (section[0].xpath("@id").get() or data["title"])
+                str(resp.url) 
             )
             data["location"] = url_with_id_pointer
             docs.append(data)
@@ -63,6 +70,9 @@ def find_urls(resp: httpx.Response, xpath: str) -> set:
         url = httpx.URL(resp.url).join(url.split("#")[0])
         if url.host != resp.url.host:
             log.debug(f"skipping url of a different hostname: {url.host}")
+            continue
+        if url.path.find("Technical-manual/4.x") == -1:
+            log.debug(f"skipping incorrect version")
             continue
         found.add(str(url))
     return found
@@ -125,9 +135,9 @@ async def run(url:str, header:str):
         responses = await crawl(
             # our starting point url
             url=url,
-            follow_xpath="//li[contains(@class, 'topchapter')]//a/@href",
+            follow_xpath="//div[contains(@id, 'main')]//a/@href",
             session=session,
-            max_depth=9000
+            max_depth=10
         )
         docs = parse(responses)
         if len(docs) > 0:
